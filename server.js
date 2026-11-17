@@ -1,4 +1,4 @@
-// Relais Pressero External Shipping -> n8n (sans CDN, sans compression) – v1.1
+// Relais Pressero External Shipping -> n8n (sans CDN, sans compression) – v1.2
 // Pressero appelle  POST https://<service>.onrender.com/pressero-external-shipping
 // Le relais transmet le JSON à n8n (N8N_URL) et renvoie la réponse de n8n telle quelle, en JSON simple.
 import express from 'express';
@@ -48,6 +48,33 @@ app.post(['/pressero-external-shipping', '/'], async (req, res) => {
     return res.status(200).json(reponseVide('Erreur du service de livraison externe'));
   } finally {
     clearTimeout(timer);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MODE ESPION (v1.2) : relaie l'appel de Pressero vers un autre service (ex. le middleware
+// Aleyant) SANS rien modifier, et journalise sa réponse exacte pour la comparer à la nôtre.
+// Pressero → https://<relais>/proxy?u=94  →  PROXY_URL?u=94  → réponse renvoyée telle quelle.
+// Les identifiants éventuels (en-tête Authorization) sont transmis mais jamais journalisés.
+const PROXY_URL = process.env.PROXY_URL;   // ex. https://external.ams.pressero.com/shipping/custom-pais.php
+app.post('/proxy', async (req, res) => {
+  if (!PROXY_URL) return res.status(500).type('text').send('PROXY_URL manquant');
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  const cible = PROXY_URL + qs;
+  console.log('>>> PROXY appel', req.body && req.body.description, '| en-têtes reçus :', Object.keys(req.headers).join(', '),
+    '| authorization :', req.headers.authorization ? req.headers.authorization.split(' ')[0] + ' (masqué)' : '(aucun)');
+  const h = { 'Content-Type': req.headers['content-type'] || 'application/json', 'User-Agent': req.headers['user-agent'] || 'Pressero', 'Accept-Encoding': 'identity' };
+  if (req.headers.authorization) h.Authorization = req.headers.authorization;
+  try {
+    const r = await fetch(cible, { method: 'POST', headers: h, body: JSON.stringify(req.body || {}) });
+    const texte = await r.text();
+    const ct = r.headers.get('content-type') || 'application/json';
+    console.log('<<< PROXY réponse', r.status, '| content-type :', ct, '| longueur :', texte.length);
+    console.log('<<< PROXY corps :', texte);
+    res.status(r.status).set({ 'Content-Type': ct, 'Content-Encoding': 'identity' }).send(texte);
+  } catch (err) {
+    console.error('Erreur proxy :', err.message);
+    res.status(502).type('text').send('Erreur proxy');
   }
 });
 

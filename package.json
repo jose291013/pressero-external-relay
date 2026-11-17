@@ -1,6 +1,6 @@
 {
   "name": "pressero-external-relay",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Relais sans compression entre le service de livraison externe Pressero et n8n",
   "main": "server.js",
   "type": "module",
