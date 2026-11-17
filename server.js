@@ -1,4 +1,4 @@
-// Relais Pressero External Shipping -> n8n (sans CDN, sans compression)
+// Relais Pressero External Shipping -> n8n (sans CDN, sans compression) – v1.1
 // Pressero appelle  POST https://<service>.onrender.com/pressero-external-shipping
 // Le relais transmet le JSON à n8n (N8N_URL) et renvoie la réponse de n8n telle quelle, en JSON simple.
 import express from 'express';
@@ -19,6 +19,8 @@ app.get('/', (req, res) => res.type('text').send('pressero-external-relay OK'));
 app.post(['/pressero-external-shipping', '/'], async (req, res) => {
   const debut = Date.now();
   const methode = req.body && req.body.description;
+  // En-têtes utiles pour le diagnostic (compression demandée par Pressero, client…)
+  console.log('>>> Appel', methode || '', '| accept-encoding:', req.headers['accept-encoding'] || '(aucun)', '| user-agent:', req.headers['user-agent'] || '');
   if (LOG_BODIES) console.log('>>> Pressero :', JSON.stringify(req.body));
   if (!N8N_URL) { console.error('N8N_URL manquant'); return res.status(200).json(reponseVide('Relais non configuré')); }
 
@@ -37,7 +39,10 @@ app.post(['/pressero-external-shipping', '/'], async (req, res) => {
     if (LOG_BODIES) console.log('<<< Réponse :', JSON.stringify(data));
     console.log(`OK ${methode || ''} ${r.status} ${Date.now() - debut} ms`);
     // Express renvoie un JSON simple, non compressé, avec Content-Length
-    return res.status(200).json(data);
+    // Réponse JSON brute : Content-Encoding identity pour que le proxy de Render ne la compresse pas
+    const corps = JSON.stringify(data);
+    res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'identity', 'Cache-Control': 'no-store, no-transform', 'Content-Length': Buffer.byteLength(corps) });
+    return res.status(200).send(corps);
   } catch (err) {
     console.error('Erreur relais :', err.message);
     return res.status(200).json(reponseVide('Erreur du service de livraison externe'));
